@@ -12,9 +12,9 @@ load_dotenv()
 app = Flask(__name__)
 
 # Configure Gemini
-genai.configure(api_key="AIzaSyBQi4LrGW9pFirEiTnFw3RONXz39nUpghQ")  # Or paste your key directly for testing
+genai.configure(api_key=os.getenv("API_KEY_GEMINI"))  # Or paste your key directly for testing
 # HIX API Configuration
-HIX_API_KEYY = os.getenv('71b72a19738541f28fbe02460335e12c')  # Store your HIX API key in .env
+HIX_API_KEYY = os.getenv("HIX_API_KEYY")  # Store your HIX API key in .env
 HIX_API_ENDPOINT = "https://api.hix.ai/v1/humanize"  # Replace with actual HIX API endpoint
 
 # Two different models for different tasks
@@ -56,7 +56,7 @@ def split_text_into_chunks(text, max_words=500):
 
     return chunks
 
-def humanize_chunk(chunk, api_key="71b72a19738541f28fbe02460335e12c"):
+def humanize_chunk(chunk, api_key=os.getenv("HIX_API_KEYY")):
     """
     Humanize a single text chunk.
     
