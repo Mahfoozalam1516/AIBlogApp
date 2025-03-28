@@ -1,5 +1,3 @@
-# AIzaSyBQi4LrGW9pFirEiTnFw3RONXz39nUpghQ
-
 import os
 import google.generativeai as genai
 from flask import Flask, render_template_string, request, jsonify
@@ -12,7 +10,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Configure Gemini
-genai.configure(api_key="")  # Or paste your key directly for testing
+genai.configure(api_key="AIzaSyBcCvjXMWDDXF1-Wms-z6dhZekX54PZhKA")  # Or paste your key directly for testing
 
 gemini_model = genai.GenerativeModel("gemini-2.0-flash")
 
@@ -82,16 +80,16 @@ def generate_blog_content(outline, product_url, product_title, product_descripti
     blog_content = []
     all_keywords = primary_keywords.split(", ") + secondary_keywords.split(", ")
     keyword_usage = {keyword: 0 for keyword in all_keywords}
-    primary_keyword_target = 3  # Reduced from 5 to 3 times
+    primary_keyword_target = 5  # Target usage for primary keywords
     secondary_keyword_target = 1  # Target usage for secondary keywords
 
     for i, section in enumerate(sections):
         previous_text = ' '.join(blog_content) if i > 0 else 'None'
 
         primary_keywords_instruction = (
-            "\n- Use primary keywords sparingly and naturally, aiming for no more than 3 total uses across the entire blog: "
+            "\n- Use each of the following primary keywords approximately **1 time** throughout this section: "
             + ', '.join(primary_keywords.split(", ")) +
-            ". Ensure the usage is contextually relevant and not forced."
+            ". Make the usage natural and contextually relevant."
         )
 
         secondary_keywords_instruction = (
@@ -132,17 +130,19 @@ Generate the content for this section."""
 
         blog_content.append(section_content)
 
-    # Ensure primary keywords are used no more than 3 times and secondary keywords are used once
+    # Ensure primary keywords are used 4-5 times and secondary keywords are used once
     for keyword, count in keyword_usage.items():
-        if keyword in primary_keywords.split(", ") and count > primary_keyword_target:
-            # Remove excess mentions by regenerating content or adjusting references
-            blog_content = [section.replace(keyword, f"**{keyword}**", count - primary_keyword_target) for section in blog_content]
+        if keyword in primary_keywords.split(", ") and count < primary_keyword_target:
+            additional_content = f"Additionally, {keyword} plays a crucial role in enhancing the overall experience."
+            blog_content.append(additional_content)
+            keyword_usage[keyword] += 1
         elif keyword in secondary_keywords.split(", ") and count < secondary_keyword_target:
             additional_content = f"Moreover, {keyword} is an important aspect to consider."
             blog_content.append(additional_content)
             keyword_usage[keyword] += 1
 
     return '\n\n'.join(blog_content)
+
 def generate_general_blog_outline(keywords, primary_keywords, prompt):
     outline_prompt = f"""Create a comprehensive and detailed blog outline based on the following details:
 
@@ -259,6 +259,23 @@ Generate the content for this section."""
 
     return '\n\n'.join(blog_content)
 
+def humanize_content(content):
+    humanize_prompt = f"""Humanize the following blog content to make it sound more natural, conversational, and engaging:
+
+{content}
+
+Guidelines for Humanization:
+1. Use a more conversational tone
+2. Add personal anecdotes or relatable examples
+3. Break up complex sentences
+4. Use more active voice
+5. Add rhetorical questions or engaging transitions
+6. Inject personality and warmth
+7. Ensure the core message and key points remain intact"""
+
+    response = gemini_model.generate_content(humanize_prompt)
+    return response.text
+
 # HTML templates
 INDEX_TEMPLATE = '''
 <!DOCTYPE html>
@@ -359,33 +376,90 @@ RESULT_TEMPLATE = '''
     <meta charset="UTF-8">
     <title>Blog Generation Result</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script>
+        function copyToClipboard() {
+            const content = document.getElementById('blog-content');
+            navigator.clipboard.writeText(content.value).then(() => {
+                alert('Content copied to clipboard!');
+            });
+        }
+    </script>
 </head>
 <body class="bg-gray-100 p-8">
     <div class="container mx-auto max-w-4xl bg-white p-8 rounded-lg shadow-lg">
         <h1 class="text-3xl font-bold mb-6 text-center">Generated Blog Content</h1>
 
-        <div class="mb-8">
-            <h2 class="text-2xl font-semibold mb-4">Blog Outline</h2>
-            <pre class="bg-gray-50 p-4 rounded border whitespace-pre-wrap">{{ outline }}</pre>
-        </div>
-
-        <div>
-            <h2 class="text-2xl font-semibold mb-4">Blog Content</h2>
-            <div class="prose max-w-none">
-                <pre class="bg-gray-50 p-4 rounded border whitespace-pre-wrap">{{ content }}</pre>
+        <form method="POST" action="/humanize" id="content-form">
+            <div class="mb-8">
+                <h2 class="text-2xl font-semibold mb-4">Blog Outline</h2>
+                <pre class="bg-gray-50 p-4 rounded border whitespace-pre-wrap">{{ outline }}</pre>
             </div>
-        </div>
 
-        <div class="mt-6 text-center">
-            <a href="/" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                Generate Another Blog
-            </a>
-        </div>
+            <div>
+                <h2 class="text-2xl font-semibold mb-4">Blog Content</h2>
+                <textarea id="blog-content" name="content" class="w-full bg-gray-50 p-4 rounded border min-h-[500px]">{{ content }}</textarea>
+            </div>
+
+            <div class="mt-6 flex justify-between">
+                <div>
+                    <a href="/" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mr-4">
+                        Generate Another Blog
+                    </a>
+                    <button type="button" onclick="copyToClipboard()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 mr-4">
+                        Copy Content
+                    </button>
+                </div>
+                <button type="submit" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">
+                    Humanize Content
+                </button>
+            </div>
+        </form>
     </div>
 </body>
 </html>
 '''
 
+HUMANIZED_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Humanized Blog Content</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script>
+        function copyToClipboard() {
+            const content = document.getElementById('humanized-content');
+            navigator.clipboard.writeText(content.value).then(() => {
+                alert('Content copied to clipboard!');
+            });
+        }
+    </script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="container mx-auto max-w-4xl bg-white p-8 rounded-lg shadow-lg">
+        <h1 class="text-3xl font-bold mb-6 text-center">Humanized Blog Content</h1>
+
+        <form>
+            <div>
+                <h2 class="text-2xl font-semibold mb-4">Humanized Content</h2>
+                <textarea id="humanized-content" class="w-full bg-gray-50 p-4 rounded border min-h-[500px]" readonly>{{ humanized_content }}</textarea>
+            </div>
+
+            <div class="mt-6 flex justify-between">
+                <a href="/" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mr-4">
+                    Generate Another Blog
+                </a>
+                <button type="button" onclick="copyToClipboard()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                    Copy Humanized Content
+                </button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
+'''
+
+# Routes
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
@@ -430,6 +504,19 @@ def generate_general_blog():
                                       outline=blog_outline,
                                       content=blog_content)
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/humanize', methods=['POST'])
+def humanize():
+    content = request.form.get('content')
+    
+    try:
+        humanized_content = humanize_content(content)
+        
+        return render_template_string(HUMANIZED_TEMPLATE, 
+                                      humanized_content=humanized_content)
+    
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
