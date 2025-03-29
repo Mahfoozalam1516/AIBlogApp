@@ -1,6 +1,6 @@
 import os
 import google.generativeai as genai
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, request, jsonify, session
 from dotenv import load_dotenv
 import requests
 import time
@@ -10,6 +10,7 @@ load_dotenv()
 
 # Initialize Flask
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
 # Configure Gemini
 genai.configure(api_key="AIzaSyBQi4LrGW9pFirEiTnFw3RONXz39nUpghQ")  # Or paste your key directly for testing
@@ -561,24 +562,27 @@ RESULT_TEMPLATE = '''
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script>
         function humanizeBlog() {
-            fetch('/humanize', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    content: document.getElementById('blog-content').textContent
+            const userConfirmed = confirm("I have read and made necessary changes to the AI blog. I know each humanize will cost credits. I agree to move forward. Proceed?");
+            if (userConfirmed) {
+                fetch('/humanize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        content: document.getElementById('blog-content').textContent
+                    })
                 })
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('humanized-content').textContent = data.humanized_content;
-                document.getElementById('humanize-section').style.display = 'block';
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to humanize the blog');
-            });
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('humanized-content').textContent = data.humanized_content;
+                    document.getElementById('humanize-section').style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to humanize the blog');
+                });
+            }
         }
 
         function saveEdits() {
@@ -601,6 +605,29 @@ RESULT_TEMPLATE = '''
                 alert('Failed to save edits');
             });
         }
+
+        function regenerateContent() {
+            fetch('/regenerate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    document.getElementById('blog-outline').textContent = data.outline;
+                    document.getElementById('blog-content').textContent = data.content;
+                    document.getElementById('humanize-section').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to regenerate content');
+            });
+        }
     </script>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center p-4">
@@ -617,7 +644,7 @@ RESULT_TEMPLATE = '''
                     </svg>
                     Blog Outline
                 </h2>
-                <pre class="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap text-gray-700">{{ outline }}</pre>
+                <pre id="blog-outline" class="bg-gray-50 p-4 rounded-lg border border-gray-200 whitespace-pre-wrap text-gray-700">{{ outline }}</pre>
             </div>
 
             <div class="bg-white border-2 border-gray-100 rounded-xl p-6 shadow-lg">
@@ -645,6 +672,12 @@ RESULT_TEMPLATE = '''
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                     </svg>
                     Save Edits
+                </button>
+                <button onclick="regenerateContent()" class="flex items-center bg-gradient-to-r from-purple-500 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-purple-600 hover:to-pink-700 transition transform hover:scale-105 shadow-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9H0m0 0v5h5.582M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Regenerate Content
                 </button>
                 <a href="/" class="flex items-center bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-indigo-700 transition transform hover:scale-105 shadow-lg">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -679,6 +712,17 @@ def index():
         secondary_keywords = request.form.get('secondary_keywords')
         intent = request.form.get('intent')
 
+        # Store form data in session
+        session['form_data'] = {
+            'product_url': product_url,
+            'product_title': product_title,
+            'product_description': product_description,
+            'primary_keywords': primary_keywords,
+            'secondary_keywords': secondary_keywords,
+            'intent': intent,
+            'type': 'product'
+        }
+
         try:
             blog_outline = generate_blog_outline(
                 product_url, product_title, product_description,
@@ -691,28 +735,86 @@ def index():
             )
 
             return render_template_string(RESULT_TEMPLATE,
-                                          outline=blog_outline,
-                                          content=blog_content)
+                                        outline=blog_outline,
+                                        content=blog_content)
 
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
     return render_template_string(INDEX_TEMPLATE)
 
+# Modified general blog route to store form data
 @app.route('/general', methods=['POST'])
 def generate_general_blog():
     keywords = request.form.get('keywords')
     primary_keywords = request.form.get('primary_keywords')
     prompt = request.form.get('prompt')
 
+    # Store form data in session
+    session['form_data'] = {
+        'keywords': keywords,
+        'primary_keywords': primary_keywords,
+        'prompt': prompt,
+        'type': 'general'
+    }
+
     try:
         blog_outline = generate_general_blog_outline(keywords, primary_keywords, prompt)
         blog_content = generate_general_blog_content(blog_outline, keywords, primary_keywords, prompt)
 
         return render_template_string(RESULT_TEMPLATE,
-                                      outline=blog_outline,
-                                      content=blog_content)
+                                    outline=blog_outline,
+                                    content=blog_content)
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# New route for regenerating content
+@app.route('/regenerate', methods=['POST'])
+def regenerate_content():
+    try:
+        form_data = session.get('form_data', {})
+        
+        if not form_data:
+            return jsonify({"error": "No previous form data found"}), 400
+
+        if form_data.get('type') == 'product':
+            blog_outline = generate_blog_outline(
+                form_data['product_url'],
+                form_data['product_title'],
+                form_data['product_description'],
+                form_data['primary_keywords'],
+                form_data['secondary_keywords'],
+                form_data['intent']
+            )
+
+            blog_content = generate_blog_content(
+                blog_outline,
+                form_data['product_url'],
+                form_data['product_title'],
+                form_data['product_description'],
+                form_data['primary_keywords'],
+                form_data['secondary_keywords'],
+                form_data['intent']
+            )
+        else:
+            blog_outline = generate_general_blog_outline(
+                form_data['keywords'],
+                form_data['primary_keywords'],
+                form_data['prompt']
+            )
+
+            blog_content = generate_general_blog_content(
+                blog_outline,
+                form_data['keywords'],
+                form_data['primary_keywords'],
+                form_data['prompt']
+            )
+
+        return jsonify({
+            'outline': blog_outline,
+            'content': blog_content
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
